@@ -27,7 +27,7 @@ class My_App(QtWidgets.QMainWindow):
 		# Timer used to trigger the camera
 		self._timer = QtCore.QTimer(self)
 		self._timer.timeout.connect(self.SLOT_query_camera)
-		self._timer.setInterval(1000 / self._cam_fps)
+		self._timer.setInterval(int(1000 / self._cam_fps))
 
 	def SLOT_browse_button(self):
 		dlg = QtWidgets.QFileDialog()
@@ -38,6 +38,20 @@ class My_App(QtWidgets.QMainWindow):
 
 		pixmap = QtGui.QPixmap(self.template_path)
 		self.template_label.setPixmap(pixmap)
+		
+		# queryiamge
+		self.query_img = cv2.imread(self.template_path, cv2.IMREAD_GRAYSCALE)  
+
+		# Features
+		self.sift = cv2.SIFT_create()
+		
+		self.kp_image, self.desc_image = self.sift.detectAndCompute(self.query_img, None)
+		# Feature matching
+		index_params = dict(algorithm=0, trees=5)
+		search_params = dict()
+		
+		self.flann = cv2.FlannBasedMatcher(index_params, search_params)
+		
 
 		print("Loaded template image file: " + self.template_path)
 
@@ -54,7 +68,19 @@ class My_App(QtWidgets.QMainWindow):
 		ret, frame = self._camera_device.read()
 		#TODO run SIFT on the captured frame
 
-		pixmap = self.convert_cv_to_pixmap(frame)
+		# Train Image
+		grayframe = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+		
+		kp_grayframe, desc_grayframe = self.sift.detectAndCompute(grayframe, None)
+		matches = self.flann.knnMatch(self.desc_image, desc_grayframe, k=2)
+		good_points = []
+		for m, n in matches:
+			if m.distance < 0.6 * n.distance:
+				good_points.append(m)
+
+		new_frame = cv2.drawMatches(self.query_img, self.kp_image, grayframe, kp_grayframe, good_points, grayframe)
+
+		pixmap = self.convert_cv_to_pixmap(new_frame)
 		self.live_image_label.setPixmap(pixmap)
 
 	def SLOT_toggle_camera(self):
@@ -66,6 +92,7 @@ class My_App(QtWidgets.QMainWindow):
 			self._timer.start()
 			self._is_cam_enabled = True
 			self.toggle_cam_button.setText("&Disable camera")
+
 
 if __name__ == "__main__":
 	app = QtWidgets.QApplication(sys.argv)
